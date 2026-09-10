@@ -447,10 +447,10 @@ ${(result?.engineSources || ['QV SMS Analysis']).join(' · ')}
                     <span className="text-[11px] bg-black/40 px-2 py-0.5 rounded-full font-mono font-black text-red-200">
                       ĐÈN ĐỎ NGUY HIỂM
                     </span>
-                    <span className="text-xs font-bold text-red-100">Xác suất lừa đảo 99%</span>
+                    <span className="text-xs font-bold text-red-100">Điểm rủi ro: {forensicReport.threatScore}/100</span>
                   </div>
                   <h2 className="text-lg sm:text-xl font-black text-white uppercase tracking-tight mt-0.5">
-                    LỪA ĐẢO 100% — DẬP MÁY / TUYỆT ĐỐI KHÔNG CHUYỂN TIỀN!
+                    RỦI RO RẤT CAO — DẬP MÁY / TUYỆT ĐỐI KHÔNG CHUYỂN TIỀN!
                   </h2>
                   <p className="text-xs text-red-100 mt-1 leading-relaxed">
                     Công an, Viện kiểm sát và Tòa án <strong>không bao giờ gọi điện hay nhắn tin đòi chuyển tiền</strong>. Tuyệt đối không bấm link lạ, không đưa mật khẩu/OTP!
@@ -476,7 +476,7 @@ ${(result?.engineSources || ['QV SMS Analysis']).join(' · ')}
                     <span className="text-[11px] bg-black/20 px-2 py-0.5 rounded-full font-mono font-black text-slate-950">
                       ĐÈN VÀNG CẢNH GIÁC
                     </span>
-                    <span className="text-xs font-bold text-slate-900">Dấu hiệu mồi chài / Nghi vấn ({forensicReport.threatScore}%)</span>
+                    <span className="text-xs font-bold text-slate-900">Điểm rủi ro: {forensicReport.threatScore}/100</span>
                   </div>
                   <h2 className="text-lg sm:text-xl font-black uppercase tracking-tight mt-0.5">
                     CẢNH GIÁC BẪY DỤ DỖ — HÃY HỎI Ý KIẾN NGƯỜI THÂN!
@@ -505,7 +505,7 @@ ${(result?.engineSources || ['QV SMS Analysis']).join(' · ')}
                     <span className="text-[11px] bg-black/30 px-2 py-0.5 rounded-full font-mono font-black text-emerald-200">
                       ĐÈN XANH AN TOÀN
                     </span>
-                    <span className="text-xs font-bold text-emerald-100">Tin nhắn đời thường (5%)</span>
+                    <span className="text-xs font-bold text-emerald-100">Điểm rủi ro: {forensicReport.threatScore}/100</span>
                   </div>
                   <h2 className="text-lg sm:text-xl font-black uppercase tracking-tight mt-0.5">
                     AN TOÀN — GIAO TIẾP / HẸN GẶP BÌNH THƯỜNG
