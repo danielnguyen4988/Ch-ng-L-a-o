@@ -34,6 +34,32 @@ export interface UserAccount {
 
 export type FraudTargetType = 'phone' | 'bank' | 'link' | 'sms' | 'logistics';
 
+export type QVAIInputType = 'text' | 'sms' | 'url' | 'phone' | 'bank' | 'logistics' | 'image';
+
+export interface QVAIInput {
+  type: QVAIInputType;
+  value: string;
+  metadata?: Record<string, unknown>;
+}
+
+export interface QVAIEvidence {
+  source: string;
+  label: string;
+  detail: string;
+  status: 'safe' | 'warning' | 'danger';
+  score?: number;
+}
+
+export interface QVAIResult {
+  inputType: QVAIInputType;
+  threatLevel: 'CRITICAL' | 'HIGH' | 'SUSPICIOUS' | 'SAFE' | 'UNKNOWN';
+  threatScore: number; // 0 - 100; risk score, not probability
+  summary: string;
+  evidence: QVAIEvidence[];
+  recommendedActions: string[];
+  engineSources: string[];
+}
+
 export interface CommunityReport {
   id: string;
   targetType: FraudTargetType;
