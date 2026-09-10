@@ -1,0 +1,17 @@
+@import "tailwindcss";
+
+@keyframes scanLaser {
+  0% {
+    top: 0%;
+  }
+  50% {
+    top: 96%;
+  }
+  100% {
+    top: 0%;
+  }
+}
+
+.animate-scan-laser {
+  animation: scanLaser 2s ease-in-out infinite;
+}
