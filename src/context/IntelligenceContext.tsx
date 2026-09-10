@@ -1,5 +1,9 @@
 import React, { createContext, useContext, useState, useEffect } from 'react';
 import { CommunityReport, FraudIntelligenceEntry, FraudTargetType } from '../types';
+import {
+  normalizeIntelligenceKey,
+  findIntelligenceMatch,
+} from '../services/intelligenceService';
 
 interface SubmitReportInput {
   targetType: FraudTargetType;
@@ -171,14 +175,6 @@ const INITIAL_INTEL: FraudIntelligenceEntry[] = [
 
 const IntelligenceContext = createContext<IntelligenceContextType | undefined>(undefined);
 
-function normalizeKey(val: string): string {
-  let clean = val.trim().toLowerCase();
-  clean = clean.replace(/^(https?:\/\/)?(www\.)?/, '');
-  clean = clean.replace(/\/.*$/, ''); // domain only for links
-  clean = clean.replace(/[\s\-\.\(\)]/g, ''); // strip spaces, dashes, dots
-  return clean;
-}
-
 export const IntelligenceProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const [entries, setEntries] = useState<Record<string, FraudIntelligenceEntry>>(() => {
     const saved = localStorage.getItem('verafense_intel_v2');
@@ -221,7 +217,10 @@ export const IntelligenceProvider: React.FC<{ children: React.ReactNode }> = ({ 
   }, [allReports]);
 
   const submitReport = (input: SubmitReportInput) => {
-    const normKey = normalizeKey(input.targetValue);
+    const normKey = normalizeIntelligenceKey(
+      input.targetType,
+      input.targetValue
+    );
     const newReportId = `rep_${Date.now()}_${Math.random().toString(36).substring(2, 6)}`;
     const nowStr = new Date().toLocaleDateString('vi-VN');
 
@@ -308,23 +307,12 @@ export const IntelligenceProvider: React.FC<{ children: React.ReactNode }> = ({ 
     };
   };
 
-  const findIntelligence = (type: FraudTargetType, value: string): FraudIntelligenceEntry | null => {
-    if (!value) return null;
-    const normKey = normalizeKey(value);
-
-    // Direct match
-    if (entries[normKey]) return entries[normKey];
-
-    // Substring / domain family match (e.g. jun88 in jun88wl.com, or phone prefix)
-    for (const key in entries) {
-      const entry = entries[key];
-      if (entry.targetType === type) {
-        if (normKey.includes(key) || key.includes(normKey)) {
-          return entry;
-        }
-      }
-    }
-    return null;
+  const findIntelligence = (
+    type: FraudTargetType,
+    value: string
+  ): FraudIntelligenceEntry | null => {
+    const match = findIntelligenceMatch(entries, type, value);
+    return match?.entry ?? null;
   };
 
   const getTopReported = (type?: FraudTargetType, limit: number = 5): FraudIntelligenceEntry[] => {

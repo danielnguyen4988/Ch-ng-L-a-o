@@ -20,6 +20,8 @@ import {
   OctagonAlert,
 } from 'lucide-react';
 import { PersonaMode, FraudTargetType } from '../../types';
+import { analyzePhone } from '../../services/analyzePhone';
+import { analyzeBank } from '../../services/analyzeBank';
 import { useAccount } from '../../context/AccountContext';
 import { useIntelligence } from '../../context/IntelligenceContext';
 import { LogisticsIntelligenceView } from './LogisticsIntelligenceView';
@@ -116,78 +118,13 @@ export const PhoneBankTab: React.FC<PhoneBankTabProps> = ({
     }
 
     setPhoneInput(num);
+
     const cleaned = num.replace(/[^0-9+]/g, '');
-
-    // Check intelligence database first
     const intel = findIntelligence('phone', cleaned);
+    const result = analyzePhone(num, intel);
 
-    if (intel) {
-      setPhoneResult({
-        number: num,
-        status: `${intel.category.toUpperCase()} (${intel.threatScore}%)`,
-        type: intel.advice,
-        carrier: 'Nhà mạng viễn thông trong nước / Quốc tế',
-        reports: intel.reportsCount,
-        border:
-          intel.threatLevel === 'CRITICAL'
-            ? 'border-red-600 bg-red-950/40'
-            : 'border-amber-600 bg-amber-950/40',
-        badge: intel.threatLevel === 'CRITICAL' ? 'bg-red-600 text-white' : 'bg-amber-600 text-white',
-        source: `Cơ sở dữ liệu Tình báo Cộng đồng (${intel.reportsCount} đơn tố giác trùng)`,
-        advice: intel.legalBasis,
-      });
-      return;
-    }
-
-    // Default heuristics
-    if (cleaned.startsWith('+882') || cleaned.startsWith('+252') || cleaned.startsWith('+224')) {
-      setPhoneResult({
-        number: num,
-        status: 'ĐẦU SỐ VỆ TINH TRỪ TIỀN TỰ ĐỘNG (WANGIRI)',
-        type: 'Nháy máy 1 giây để dụ nạn nhân gọi lại, cước phí lên tới 150.000đ/phút kết nối',
-        carrier: 'Mạng viễn thông vệ tinh quốc tế (Inmarsat / Thuraya)',
-        reports: 189,
-        border: 'border-red-600 bg-red-950/40',
-        badge: 'bg-red-600 text-white',
-        source: 'Trung tâm Giám sát An toàn Không gian mạng Quốc gia (NCSC)',
-        advice: 'KHÔNG GỌI LẠI DƯỚI MỌI HÌNH THỨC. Đưa ngay vào danh sách chặn của máy!',
-      });
-    } else if (cleaned.startsWith('024888') || cleaned.startsWith('02888') || cleaned.startsWith('0247') || cleaned.startsWith('0287')) {
-      setPhoneResult({
-        number: num,
-        status: 'ĐẦU SỐ ẢO VOIP CÓ DẤU HIỆU LỪA ĐẢO',
-        type: 'Đầu số dịch vụ tổng đài ảo thường xuyên bị các ổ nhóm lừa đảo ở biên giới thuê để giả danh cơ quan công an',
-        carrier: 'Đầu số VoIP Internet SIP Trunking',
-        reports: 342,
-        border: 'border-red-600 bg-red-950/40',
-        badge: 'bg-red-600 text-white',
-        source: 'Hệ thống tiếp nhận phản ánh tin nhắn rác & cuộc gọi rác (VNCERT)',
-        advice: 'Cơ quan Công an KHÔNG làm việc qua điện thoại. Hãy ngắt máy ngay nếu người gọi tự xưng Công an/Tòa án.',
-      });
-    } else if (cleaned === '1900545415' || cleaned === '1800545415' || cleaned === '1900545426') {
-      setPhoneResult({
-        number: num,
-        status: 'TỔNG ĐÀI CHÍNH THỨC XÁC THỰC',
-        type: 'Hotline Chăm sóc khách hàng chính thức của Ngân hàng / Doanh nghiệp',
-        carrier: 'Tổng đài dịch vụ 1900/1800 hợp pháp đã đăng ký Bộ TTTT',
-        reports: 0,
-        border: 'border-emerald-600 bg-emerald-950/40',
-        badge: 'bg-emerald-600 text-white',
-        source: 'Danh bạ định danh Doanh nghiệp Nhà nước & Ngân hàng',
-        advice: 'Số điện thoại hợp lệ và an toàn để liên hệ tra cứu thông tin.',
-      });
-    } else {
-      setPhoneResult({
-        number: num,
-        status: 'SỐ THUÊ BAO CÁ NHÂN / CHƯA CÓ DỮ LIỆU TỐ GIÁC',
-        type: 'Số di động trong nước thông thường',
-        carrier: cleaned.startsWith('098') || cleaned.startsWith('097') || cleaned.startsWith('086') ? 'Viettel' : 'Mobifone / Vinaphone',
-        reports: 0,
-        border: 'border-blue-600 bg-blue-950/40',
-        badge: 'bg-blue-600 text-white',
-        source: 'Cơ sở dữ liệu định danh thuê bao viễn thông',
-        advice: 'Hiện chưa có báo cáo lừa đảo về số này. Vẫn cần cảnh giác nếu người gọi yêu cầu chuyển tiền hay gửi mã OTP.',
-      });
+    if (result) {
+      setPhoneResult(result);
     }
   };
 
@@ -201,63 +138,13 @@ export const PhoneBankTab: React.FC<PhoneBankTabProps> = ({
     }
 
     setBankInput(acc);
+
     const cleaned = acc.replace(/[^0-9]/g, '');
-
-    // Check intelligence database first
     const intel = findIntelligence('bank', cleaned);
+    const result = analyzeBank(acc, bankName, intel);
 
-    if (intel) {
-      setBankResult({
-        account: acc,
-        bank: bankName,
-        holder: 'ĐỐI TƯỢNG NẰM TRONG DANH SÁCH ĐEN',
-        riskLevel: `${intel.category.toUpperCase()} (${intel.threatScore}%)`,
-        reports: intel.reportsCount,
-        totalScammed: `${intel.totalLossReported.toLocaleString('vi-VN')} VND`,
-        border:
-          intel.threatLevel === 'CRITICAL'
-            ? 'border-red-600 bg-red-950/40'
-            : 'border-amber-600 bg-amber-950/40',
-        badge: intel.threatLevel === 'CRITICAL' ? 'bg-red-600 text-white' : 'bg-amber-600 text-white',
-        pattern: intel.advice,
-        legalWarning: intel.legalBasis,
-        action:
-          'Kích hoạt cơ chế cảnh báo Napas liên ngân hàng và trích xuất hồ sơ chứng cứ chuyển cơ quan CSĐT.',
-      });
-      return;
-    }
-
-    if (cleaned === '102938484' || cleaned === '9876543210' || cleaned.includes('102938')) {
-      setBankResult({
-        account: acc,
-        bank: bankName,
-        holder: 'NGUYEN VAN T***',
-        riskLevel: 'TÀI KHOẢN MULE / RỬA TIỀN (53 BÁO CÁO)',
-        reports: 53,
-        totalScammed: '2.450.000.000 VND',
-        border: 'border-red-600 bg-red-950/40',
-        badge: 'bg-red-600 text-white',
-        pattern:
-          'Tài khoản trung gian (Money Mule) nhận tiền lừa đảo từ các vụ giả danh Tòa án và bẫy CTV Shopee, ngay lập tức chia nhỏ chuyển sang ví điện tử và sàn tiền số P2P trong vòng 90 giây.',
-        legalWarning:
-          'Hành vi mở, thuê, cho thuê hoặc bán tài khoản ngân hàng để tiếp tay cho tội phạm bị truy cứu trách nhiệm hình sự theo Điều 291 Bộ luật Hình sự (Mức án lên đến 7 năm tù).',
-        action:
-          'Gửi yêu cầu phong tỏa khẩn cấp theo Điều 129 Bộ luật Tố tụng Hình sự tới ngân hàng và Cục Cảnh sát Hình sự (C02).',
-      });
-    } else {
-      setBankResult({
-        account: acc,
-        bank: bankName,
-        holder: 'TÀI KHOẢN CÁ NHÂN HỢP PHÁP',
-        riskLevel: 'CHƯA GHI NHẬN TỐ CÁO TRÙNG LẶP',
-        reports: 0,
-        totalScammed: '0 VND',
-        border: 'border-blue-600 bg-blue-950/40',
-        badge: 'bg-blue-600 text-white',
-        pattern: 'Tài khoản hoạt động bình thường trên hệ thống Napas.',
-        legalWarning: 'Luôn kiểm tra đúng tên người nhận trước khi thực hiện lệnh chuyển khoản.',
-        action: 'Nếu bị ép chuyển tiền, hãy lập tức dừng lại và liên hệ người thân.',
-      });
+    if (result) {
+      setBankResult(result);
     }
   };
 
