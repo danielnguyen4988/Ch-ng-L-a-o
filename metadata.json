@@ -1,0 +1,6 @@
+{
+  "name": "VeraFense - Nền Tảng Thẩm Định & Phòng Thủ Gian Lận Số",
+  "description": "Nền tảng thẩm định bằng chứng số, bóc tách thao túng tâm lý, đối soát gian lận tài chính và tình báo logistics bảo vệ shipper, chống bom hàng và hàng cấm.",
+  "requestFramePermissions": ["camera"],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
