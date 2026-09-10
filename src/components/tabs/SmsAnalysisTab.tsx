@@ -20,9 +20,11 @@ import {
   ChevronDown,
   ChevronUp,
 } from 'lucide-react';
-import { PersonaMode, ForensicReport, EvidenceSignal } from '../../types';
+import { PersonaMode, ForensicReport, EvidenceSignal, QVAIResult } from '../../types';
 import { useAccount } from '../../context/AccountContext';
 import { analyzeSms } from '../../services/analyzeSms';
+import { analyzeQVAI } from '../../services/qvAiService';
+import { useIntelligence } from '../../context/IntelligenceContext';
 
 interface SmsAnalysisTabProps {
   persona: PersonaMode;
@@ -48,8 +50,10 @@ export const SmsAnalysisTab: React.FC<SmsAnalysisTabProps> = ({
   onNotify,
 }) => {
   const { isPro, consumeQuota } = useAccount();
+  const { entries } = useIntelligence();
   const [isSpeaking, setIsSpeaking] = useState(false);
   const [showTechDetails, setShowTechDetails] = useState(false);
+  const [qvAiResult, setQvAiResult] = useState<QVAIResult | null>(null);
 
   const handlePasteClipboard = async () => {
     try {
@@ -78,6 +82,17 @@ export const SmsAnalysisTab: React.FC<SmsAnalysisTabProps> = ({
     if (report) {
       setForensicReport(report);
     }
+
+    const qvResult = analyzeQVAI(
+      {
+        type: 'sms',
+        value: text,
+      },
+      {
+        intelligence: entries,
+      }
+    );
+    setQvAiResult(qvResult);
   };
 
   useEffect(() => {
@@ -108,17 +123,60 @@ export const SmsAnalysisTab: React.FC<SmsAnalysisTabProps> = ({
     setIsSpeaking(true);
   };
 
-  const shareWithParents = () => {
-    const isCritical = (forensicReport?.threatScore || 0) >= 70;
-    const cleanSnippet = smsInput.trim().substring(0, 120);
-    const text = `⚠️ CẢNH BÁO TỪ CON / NGƯỜI THÂN:
-Con vừa kiểm tra nội dung này trên hệ thống phòng chống lừa đảo VeraFense:
-"${cleanSnippet}${smsInput.length > 120 ? '...' : ''}"
+  const shareWithParents = async () => {
+    const result = qvAiResult;
+    const cleanSnippet = smsInput.trim().substring(0, 160);
+    const score = result?.threatScore ?? forensicReport?.threatScore ?? 0;
+    const level = result?.threatLevel ?? 'UNKNOWN';
+    const summary =
+      result?.summary ||
+      forensicReport?.elderlySummary ||
+      forensicReport?.youthSummary ||
+      'Chưa có đủ dữ liệu để đưa ra kết luận.';
 
-❌ KẾT QUẢ: ${isCritical ? 'LỪA ĐẢO NGUY HIỂM 100%' : forensicReport?.category || 'CẦN CẢNH GIÁC'}
-⛔ LỜI DẶN: ${isCritical ? 'Tuyệt đối KHÔNG CHUYỂN TIỀN, KHÔNG BẤM LINK LẠ, DẬP MÁY NGAY. Bố mẹ bình tĩnh gọi lại cho con ngay nhé!' : 'Cần kiểm tra kỹ, không chuyển tiền vội vã.'}`;
-    navigator.clipboard.writeText(text);
-    onNotify('Đã sao chép lời dặn cảnh báo gửi người thân qua Zalo!');
+    const text = `🛡️ KẾT QUẢ KIỂM TRA VERAFENSE
+
+Mức độ cảnh báo: ${level}
+Điểm rủi ro: ${score}/100
+
+Nội dung:
+"${cleanSnippet}${smsInput.length > 160 ? '...' : ''}"
+
+Kết luận:
+${summary}
+
+Khuyến nghị:
+${(result?.recommendedActions || ['Không chuyển tiền, không cung cấp OTP hoặc thông tin xác thực khi chưa xác minh.'])
+  .slice(0, 4)
+  .map((action) => `• ${action}`)
+  .join('\n')}
+
+Nguồn phân tích:
+${(result?.engineSources || ['QV SMS Analysis']).join(' · ')}
+
+— VeraFense | Bảo vệ người dân khỏi lừa đảo trực tuyến`;
+
+    if (navigator.share) {
+      try {
+        await navigator.share({
+          title: 'Kết quả kiểm tra VeraFense',
+          text,
+        });
+        onNotify('Đã mở bảng chia sẻ kết quả. Bạn có thể chọn Zalo hoặc ứng dụng muốn gửi.');
+        return;
+      } catch (error) {
+        if (error instanceof DOMException && error.name === 'AbortError') {
+          return;
+        }
+      }
+    }
+
+    try {
+      await navigator.clipboard.writeText(text);
+      onNotify('Đã sao chép kết quả. Bạn có thể mở Zalo hoặc ứng dụng nhắn tin để gửi.');
+    } catch {
+      onNotify('Không thể tự động chia sẻ. Vui lòng sao chép kết quả và gửi cho người thân.');
+    }
   };
 
   return (
@@ -272,6 +330,106 @@ Con vừa kiểm tra nội dung này trên hệ thống phòng chống lừa đ�
         </div>
       </div>
 
+      {/* QV AI - TỔNG HỢP ĐA TÍN HIỆU */}
+      {qvAiResult && (
+        <div className="bg-slate-950 p-5 sm:p-6 rounded-2xl border border-cyan-500/40 shadow-xl space-y-4">
+          <div className="flex items-center justify-between gap-3">
+            <div className="flex items-center gap-3">
+              <div className="p-2.5 bg-cyan-500/10 rounded-xl border border-cyan-500/20">
+                <Sparkles className="w-5 h-5 text-cyan-400" />
+              </div>
+              <div>
+                <div className="text-[11px] font-black uppercase tracking-wider text-cyan-400">
+                  QV AI — Phân tích tổng hợp
+                </div>
+                <div className="text-xs text-slate-400 mt-0.5">
+                  Tổng hợp Intelligence + QV SMS Analysis
+                </div>
+              </div>
+            </div>
+            <div className="text-right">
+              <div className="text-2xl font-black text-white">
+                {qvAiResult.threatScore}/100
+              </div>
+              <div className="text-[10px] font-bold text-slate-500 uppercase">
+                {qvAiResult.threatLevel}
+              </div>
+            </div>
+          </div>
+
+          <div className="bg-slate-900/70 rounded-xl p-4 border border-slate-800">
+            <div className="text-sm font-bold text-white leading-relaxed">
+              {qvAiResult.summary}
+            </div>
+          </div>
+
+          {qvAiResult.evidence.length > 0 && (
+            <div className="space-y-2">
+              <div className="text-[11px] font-black uppercase tracking-wider text-slate-400">
+                Bằng chứng từ các engine
+              </div>
+              <div className="space-y-2">
+                {qvAiResult.evidence.slice(0, 5).map((item, index) => (
+                  <div
+                    key={`${item.source}-${item.label}-${index}`}
+                    className="bg-slate-900/60 rounded-xl p-3 border border-slate-800"
+                  >
+                    <div className="flex items-start justify-between gap-3">
+                      <div>
+                        <div className="text-xs font-bold text-white">
+                          {item.label}
+                        </div>
+                        <div className="text-[11px] text-slate-400 mt-1 leading-relaxed">
+                          {item.detail}
+                        </div>
+                      </div>
+                      <span
+                        className={`shrink-0 text-[9px] font-black uppercase px-2 py-1 rounded-full ${
+                          item.status === 'danger'
+                            ? 'bg-red-500/15 text-red-300'
+                            : item.status === 'warning'
+                              ? 'bg-amber-500/15 text-amber-300'
+                              : 'bg-emerald-500/15 text-emerald-300'
+                        }`}
+                      >
+                        {item.status === 'danger'
+                          ? 'NGUY HIỂM'
+                          : item.status === 'warning'
+                            ? 'CẢNH GIÁC'
+                            : 'AN TOÀN'}
+                      </span>
+                    </div>
+                    <div className="text-[10px] text-slate-600 mt-2">
+                      Nguồn: {item.source}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+
+          <div>
+            <div className="text-[11px] font-black uppercase tracking-wider text-slate-400 mb-2">
+              Khuyến nghị
+            </div>
+            <ul className="space-y-1.5">
+              {qvAiResult.recommendedActions.slice(0, 4).map((action, index) => (
+                <li key={`${action}-${index}`} className="text-xs text-slate-300 leading-relaxed flex gap-2">
+                  <span className="text-cyan-400">•</span>
+                  <span>{action}</span>
+                </li>
+              ))}
+            </ul>
+          </div>
+
+          {qvAiResult.engineSources.length > 0 && (
+            <div className="text-[10px] text-slate-500">
+              Engine: {qvAiResult.engineSources.join(' · ')}
+            </div>
+          )}
+        </div>
+      )}
+
       {/* ANALYSIS RESULT CARD */}
       {forensicReport && (
         <div
@@ -360,7 +518,7 @@ Con vừa kiểm tra nội dung này trên hệ thống phòng chống lừa đ�
             </div>
           )}
 
-          {/* LỜI DẶN DỄ HIỂU CHO BÁC LỚN TUỔI & CHIA SẺ ZALO */}
+          {/* LỜI DẶN DỄ HIỂU CHO BÁC LỚN TUỔI & CHIA SẺ KẾT QUẢ */}
           <div className="p-4 sm:p-5 bg-gradient-to-r from-amber-950/40 via-slate-900 to-purple-950/40 border-2 border-amber-500/50 rounded-2xl text-amber-200 space-y-3 shadow-xl">
             <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-slate-800 pb-2.5">
               <span className="text-xs font-black uppercase tracking-wider text-amber-300 flex items-center gap-2">
@@ -372,7 +530,7 @@ Con vừa kiểm tra nội dung này trên hệ thống phòng chống lừa đ�
                 className="bg-purple-600 hover:bg-purple-500 text-white font-bold text-xs px-3.5 py-2 rounded-xl flex items-center gap-1.5 self-start sm:self-auto cursor-pointer shadow-md transition-all active:scale-95"
               >
                 <Share2 className="w-3.5 h-3.5" />
-                <span>Chia Sẻ Cho Người Thân Qua Zalo</span>
+                <span>Chia Sẻ Kết Quả Cho Người Thân</span>
               </button>
             </div>
             <p className="text-sm sm:text-base font-bold text-white leading-relaxed">

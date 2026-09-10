@@ -3,6 +3,8 @@ import { CommunityReport, FraudIntelligenceEntry, FraudTargetType } from '../typ
 import {
   normalizeIntelligenceKey,
   findIntelligenceMatch,
+  queryIntelligence,
+  IntelligenceMatch,
 } from '../services/intelligenceService';
 
 interface SubmitReportInput {
@@ -27,6 +29,11 @@ interface IntelligenceContextType {
     accumulatedLoss: number;
   };
   findIntelligence: (type: FraudTargetType, value: string) => FraudIntelligenceEntry | null;
+  queryIntelligence: (
+    type: FraudTargetType,
+    value: string
+  ) => IntelligenceMatch[];
+
   getTopReported: (type?: FraudTargetType, limit?: number) => FraudIntelligenceEntry[];
 }
 
@@ -307,6 +314,13 @@ export const IntelligenceProvider: React.FC<{ children: React.ReactNode }> = ({ 
     };
   };
 
+  const queryIntelligenceFromContext = (
+    type: FraudTargetType,
+    value: string
+  ): IntelligenceMatch[] => {
+    return queryIntelligence(entries, type, value);
+  };
+
   const findIntelligence = (
     type: FraudTargetType,
     value: string
@@ -331,6 +345,7 @@ export const IntelligenceProvider: React.FC<{ children: React.ReactNode }> = ({ 
         allReports,
         submitReport,
         findIntelligence,
+        queryIntelligence: queryIntelligenceFromContext,
         getTopReported,
       }}
     >

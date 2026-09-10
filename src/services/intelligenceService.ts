@@ -14,7 +14,7 @@ export function normalizeBank(value: string): string {
 }
 
 export function normalizeLink(value: string): string {
-  let clean = value.trim().toLowerCase();
+  const clean = value.trim().toLowerCase();
 
   try {
     const url = /^https?:\/\//i.test(clean)
@@ -64,7 +64,9 @@ export function queryIntelligence(
   const normalizedInput = normalizeIntelligenceKey(type, value);
   if (!normalizedInput) return [];
 
-  const matches: IntelligenceMatch[] = [];
+  const exactMatches: IntelligenceMatch[] = [];
+  const normalizedMatches: IntelligenceMatch[] = [];
+  const containsMatches: IntelligenceMatch[] = [];
 
   for (const entry of Object.values(entries)) {
     if (entry.targetType !== type) continue;
@@ -77,9 +79,17 @@ export function queryIntelligence(
     if (!normalizedEntry) continue;
 
     if (normalizedEntry === normalizedInput) {
-      matches.push({
+      exactMatches.push({
         entry,
         reason: 'exact',
+      });
+      continue;
+    }
+
+    if (entry.normalizedKey === normalizedInput) {
+      normalizedMatches.push({
+        entry,
+        reason: 'normalized',
       });
       continue;
     }
@@ -88,14 +98,32 @@ export function queryIntelligence(
       normalizedEntry.includes(normalizedInput) ||
       normalizedInput.includes(normalizedEntry)
     ) {
-      matches.push({
+      containsMatches.push({
         entry,
         reason: 'contains',
       });
     }
   }
 
-  return matches;
+  const sortMatches = (
+    a: IntelligenceMatch,
+    b: IntelligenceMatch
+  ): number => {
+    return (
+      b.entry.threatScore - a.entry.threatScore ||
+      b.entry.reportsCount - a.entry.reportsCount
+    );
+  };
+
+  exactMatches.sort(sortMatches);
+  normalizedMatches.sort(sortMatches);
+  containsMatches.sort(sortMatches);
+
+  return [
+    ...exactMatches,
+    ...normalizedMatches,
+    ...containsMatches,
+  ];
 }
 
 export function findIntelligenceMatch(
