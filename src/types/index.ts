@@ -235,4 +235,3 @@ export interface LogisticsRiskProfile {
   recentReports: LogisticsReportItem[];
   actionPlan: string[];
 }
-
