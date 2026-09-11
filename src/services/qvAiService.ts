@@ -40,6 +40,13 @@ interface QVRiskSignal {
     | 'intelligence'
     | 'engine'
     | 'behavior'
+    | 'category'
+    | 'impersonation'
+    | 'phishing'
+    | 'malware'
+    | 'authentication'
+    | 'payment'
+    | 'artifact'
     | 'structure'
     | 'official'
     | 'baseline';
@@ -162,6 +169,144 @@ const analyzeUrlStructure = (
   };
 
 
+interface QVWebsiteEvidence {
+  fetchStatus: 'available' | 'blocked' | 'failed';
+  title: string;
+  description: string;
+  text: string;
+  forms: number;
+  passwordFields: number;
+  otpSignals: number;
+  paymentSignals: number;
+  gamblingSignals: number;
+  downloadSignals: number;
+  loginSignals: number;
+  brandMentions: string[];
+  finalUrl: string;
+}
+
+const WEBSITE_CONTENT_LIMIT = 12000;
+const FETCH_TIMEOUT_MS = 5000;
+
+const normalizeWebsiteText = (value: string): string =>
+  value
+    .replace(/\s+/g, ' ')
+    .trim()
+    .slice(0, WEBSITE_CONTENT_LIMIT);
+
+const countTermSignals = (text: string, terms: string[]): number =>
+  terms.reduce(
+    (count, term) => count + (text.includes(term) ? 1 : 0),
+    0
+  );
+
+const isUnsafeFetchTarget = (value: string): boolean => {
+  try {
+    const parsed = /^https?:\/\//i.test(value)
+      ? new URL(value)
+      : new URL(`https://${value}`);
+
+    const hostname = parsed.hostname.toLowerCase();
+
+    if (!['http:', 'https:'].includes(parsed.protocol)) return true;
+    if (parsed.username || parsed.password) return true;
+    if (
+      hostname === 'localhost' ||
+      hostname.endsWith('.localhost') ||
+      hostname === '127.0.0.1' ||
+      hostname === '::1' ||
+      hostname === '0.0.0.0' ||
+      hostname.endsWith('.local')
+    ) {
+      return true;
+    }
+
+    const ipv4 = hostname.match(
+      /^(\d{1,3})\.(\d{1,3})\.(\d{1,3})\.(\d{1,3})$/
+    );
+
+    if (ipv4) {
+      const [a, b] = ipv4.slice(1).map(Number);
+
+      if (
+        a === 10 ||
+        a === 127 ||
+        (a === 172 && b >= 16 && b <= 31) ||
+        (a === 192 && b === 168) ||
+        (a === 169 && b === 254)
+      ) {
+        return true;
+      }
+    }
+
+    return false;
+  } catch {
+    return true;
+  }
+};
+
+export const collectUrlEvidence = async (
+  value: string
+): Promise<QVWebsiteEvidence> => {
+  const empty: QVWebsiteEvidence = {
+    fetchStatus: 'failed',
+    title: '',
+    description: '',
+    text: '',
+    forms: 0,
+    passwordFields: 0,
+    otpSignals: 0,
+    paymentSignals: 0,
+    gamblingSignals: 0,
+    downloadSignals: 0,
+    loginSignals: 0,
+    brandMentions: [],
+    finalUrl: value,
+  };
+
+  const endpoint =
+    (import.meta.env.VITE_WEB_INVESTIGATOR_URL as string | undefined)?.trim() ||
+    'http://localhost:8787/api/web-investigate';
+
+  try {
+    const response = await fetch(endpoint, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Accept: 'application/json',
+      },
+      body: JSON.stringify({ url: value }),
+      signal: AbortSignal.timeout(FETCH_TIMEOUT_MS + 3000),
+    });
+
+    if (!response.ok) {
+      return empty;
+    }
+
+    const data = (await response.json()) as Partial<QVWebsiteEvidence>;
+
+    if (
+      data.fetchStatus !== 'available' &&
+      data.fetchStatus !== 'blocked' &&
+      data.fetchStatus !== 'failed'
+    ) {
+      return empty;
+    }
+
+    return {
+      ...empty,
+      ...data,
+      finalUrl:
+        typeof data.finalUrl === 'string' && data.finalUrl
+          ? data.finalUrl
+          : value,
+    };
+  } catch {
+    return empty;
+  }
+};
+
+
 interface ProtectedBrand {
   name: string;
   domains: string[];
@@ -228,7 +373,7 @@ const analyzeBrandImpersonation = (
       score: 88,
       weight: 1,
       reliability: 0.9,
-      kind: 'behavior',
+      kind: 'impersonation',
     });
 
     break;
@@ -250,26 +395,43 @@ const fuseRiskSignals = (signals: QVRiskSignal[]): number => {
       score: clampScore(signal.score),
       effectiveWeight: signal.weight * signal.reliability,
     }))
-    .filter((signal) => signal.effectiveWeight > 0)
+    .filter((signal) => signal.effectiveWeight > 0);
+
+  if (usable.length === 0) return 0;
+
+  // Các tín hiệu cùng một nhóm rủi ro (đặc biệt category như gambling)
+  // không được tính như nhiều bằng chứng độc lập. Giữ tín hiệu mạnh nhất
+  // trong cùng nhóm để tránh double-count giữa engine cũ và web reader.
+  const deduped: typeof usable = [];
+  const seenKinds = new Set<QVRiskSignal['kind']>();
+
+  usable
     .sort(
       (a, b) =>
         b.score * b.effectiveWeight -
         a.score * a.effectiveWeight
-    );
+    )
+    .forEach((signal) => {
+      if (signal.kind === 'category') {
+        if (seenKinds.has('category')) return;
+        seenKinds.add('category');
+      }
+      deduped.push(signal);
+    });
 
-  if (usable.length === 0) return 0;
+  const ranked = deduped.sort(
+    (a, b) =>
+      b.score * b.effectiveWeight -
+      a.score * a.effectiveWeight
+  );
 
-  // Tín hiệu mạnh nhất có trọng số lớn nhất.
-  const strongest = usable[0];
-
-  let weightedTotal =
-    strongest.score * strongest.effectiveWeight;
-
+  const strongest = ranked[0];
+  let weightedTotal = strongest.score * strongest.effectiveWeight;
   let totalWeight = strongest.effectiveWeight;
 
-  // Các tín hiệu độc lập phía sau dùng để củng cố,
-  // không được phép một mình kéo điểm lên quá mạnh.
-  usable.slice(1, 5).forEach((signal, index) => {
+  // Các tín hiệu bổ sung chỉ củng cố kết luận; không được tự mình kéo
+  // điểm lên mạnh như một bằng chứng chính.
+  ranked.slice(1, 5).forEach((signal, index) => {
     const corroborationWeight =
       signal.effectiveWeight * (0.45 / (index + 1));
 
@@ -282,17 +444,54 @@ const fuseRiskSignals = (signals: QVRiskSignal[]): number => {
       ? weightedTotal / totalWeight
       : strongest.score;
 
-  // Nhiều nguồn độc lập cùng xác nhận -> tăng confidence/risk nhẹ.
   const independentSources = new Set(
-    usable.map((signal) => signal.source)
+    ranked.map((signal) => signal.source)
   ).size;
 
   if (independentSources >= 2) {
-    fused += Math.min(8, (independentSources - 1) * 3);
+    fused += Math.min(6, (independentSources - 1) * 2);
   }
 
+  // Nội dung/danh mục tự thân không phải bằng chứng lừa đảo.
+  // Ví dụ: website có casino/cá cược chỉ chứng minh category risk.
+  const hasFraudEvidence = ranked.some((signal) =>
+    [
+      'intelligence',
+      'impersonation',
+      'phishing',
+      'malware',
+    ].includes(signal.kind)
+  );
+
+  const hasBehavioralCorroboration = ranked.some((signal) =>
+    [
+      'authentication',
+      'payment',
+      'artifact',
+      'engine',
+    ].includes(signal.kind)
+  );
+
+  const hasOnlyCategoryOrStructure = ranked.every((signal) =>
+    ['category', 'structure', 'official'].includes(signal.kind)
+  );
+
+  if (!hasFraudEvidence && !hasBehavioralCorroboration && hasOnlyCategoryOrStructure) {
+    // Một category signal (ví dụ casino/cá cược) hoặc cấu trúc URL bất thường
+    // đứng một mình chưa đủ để kết luận lừa đảo. Giữ ngưỡng dưới HIGH.
+    fused = Math.min(fused, 49);
+  } else if (!hasFraudEvidence && ranked.some((signal) => signal.kind === 'category')) {
+    // Category + một tín hiệu hành vi có thể đáng ngờ hơn, nhưng chưa đủ
+    // để tự động coi là HIGH/CRITICAL fraud risk.
+    fused = Math.min(fused, 64);
+  }
+
+  const onlyImpersonation = ranked.length > 0 && ranked.every(
+    (signal) => signal.kind === 'impersonation' || signal.kind === 'structure'
+  ) && ranked.some((signal) => signal.kind === 'impersonation');
+
   // Exact intelligence là bằng chứng rất mạnh.
-  const exactIntelligence = usable.find(
+  const exactIntelligence = ranked.find(
     (signal) =>
       signal.kind === 'intelligence' &&
       signal.reliability >= 0.95
@@ -303,6 +502,16 @@ const fuseRiskSignals = (signals: QVRiskSignal[]): number => {
       fused,
       exactIntelligence.score * 0.9
     );
+  } else {
+    const onlyImpersonation = ranked.length > 0 && ranked.every(
+      (signal) => signal.kind === 'impersonation' || signal.kind === 'structure'
+    ) && ranked.some((signal) => signal.kind === 'impersonation');
+
+    // Brand impersonation là bằng chứng mạnh nhưng khi đứng một mình vẫn
+    // chưa phải bằng chứng xác nhận gian lận. Giữ HIGH thay vì nhảy CRITICAL.
+    if (onlyImpersonation) {
+      fused = Math.min(fused, 79);
+    }
   }
 
   return clampScore(fused);
@@ -376,6 +585,9 @@ export const analyzeQVAI = (
     const isPhishing = metadata.isPhishing === true;
     const isApk = metadata.isApk === true;
     const isBaselineSignal = metadata.isBaselineSignal === true;
+    const websiteEvidence = metadata.websiteEvidence as
+      | QVWebsiteEvidence
+      | undefined;
 
     const urlStructureSignals = analyzeUrlStructure(value);
     if (urlStructureSignals.length > 0) {
@@ -418,6 +630,127 @@ export const analyzeQVAI = (
       recommendedActions.push(
         'Không nhập mật khẩu, OTP hoặc thông tin thanh toán nếu tên miền có dấu hiệu giả mạo thương hiệu; hãy tự mở website chính thức bằng địa chỉ đã biết.'
       );
+    }
+
+    if (websiteEvidence?.fetchStatus === 'available') {
+      engineSources.push('QV Website Content Analysis');
+
+      const contentRiskSignals: QVRiskSignal[] = [];
+
+      if (websiteEvidence.gamblingSignals >= 2) {
+        contentRiskSignals.push({
+          source: 'QV Website Content Analysis',
+          score: 55,
+          weight: 0.7,
+          reliability: 0.86,
+          kind: 'category',
+        });
+        evidence.push({
+          source: 'QV Website Content Analysis',
+          label: 'Nội dung website có dấu hiệu cờ bạc/cá cược',
+          detail:
+            `Phân tích nội dung trang phát hiện ${websiteEvidence.gamblingSignals} nhóm từ khóa liên quan casino, cá cược hoặc game bài.`,
+          status: 'warning',
+          score: 55,
+        });
+        recommendedActions.push(
+          'Nếu website có nội dung cờ bạc/cá cược, không đăng ký hoặc nạp tiền khi chưa xác minh nguồn và tính hợp pháp của dịch vụ.'
+        );
+      }
+
+      if (
+        websiteEvidence.passwordFields > 0 &&
+        websiteEvidence.otpSignals >= 1
+      ) {
+        contentRiskSignals.push({
+          source: 'QV Website Content Analysis',
+          score: 82,
+          weight: 0.95,
+          reliability: 0.84,
+          kind: 'authentication',
+        });
+        evidence.push({
+          source: 'QV Website Content Analysis',
+          label: 'Trang yêu cầu thông tin xác thực nhạy cảm',
+          detail:
+            `Phát hiện ${websiteEvidence.passwordFields} ô mật khẩu và tín hiệu OTP/xác thực trong nội dung website.`,
+          status: 'warning',
+          score: 82,
+        });
+      }
+
+      if (websiteEvidence.paymentSignals >= 2) {
+        contentRiskSignals.push({
+          source: 'QV Website Content Analysis',
+          score: 74,
+          weight: 0.8,
+          reliability: 0.76,
+          kind: 'payment',
+        });
+        evidence.push({
+          source: 'QV Website Content Analysis',
+          label: 'Nội dung liên quan giao dịch/thanh toán',
+          detail:
+            `Phát hiện ${websiteEvidence.paymentSignals} nhóm tín hiệu liên quan thanh toán, ngân hàng hoặc tiền số.`,
+          status: 'warning',
+          score: 74,
+        });
+      }
+
+      if (websiteEvidence.downloadSignals >= 2) {
+        contentRiskSignals.push({
+          source: 'QV Website Content Analysis',
+          score: 68,
+          weight: 0.65,
+          reliability: 0.7,
+          kind: 'artifact',
+        });
+        evidence.push({
+          source: 'QV Website Content Analysis',
+          label: 'Website có dấu hiệu phân phối/tải ứng dụng',
+          detail:
+            `Phát hiện ${websiteEvidence.downloadSignals} nhóm tín hiệu liên quan tải xuống hoặc cài đặt ứng dụng.`,
+          status: 'warning',
+          score: 68,
+        });
+      }
+
+      riskSignals.push(...contentRiskSignals);
+
+      if (websiteEvidence.title) {
+        evidence.push({
+          source: 'QV Website Content Analysis',
+          label: 'Tiêu đề website đã được đọc',
+          detail: `Title: ${websiteEvidence.title}`,
+          status: 'safe',
+        });
+      }
+
+      if (websiteEvidence.finalUrl && websiteEvidence.finalUrl !== value) {
+        evidence.push({
+          source: 'QV Website Content Analysis',
+          label: 'Website chuyển hướng sang URL khác',
+          detail: `URL cuối: ${websiteEvidence.finalUrl}`,
+          status: 'warning',
+        });
+      }
+    } else if (websiteEvidence?.fetchStatus === 'blocked') {
+      engineSources.push('QV Website Content Analysis');
+      evidence.push({
+        source: 'QV Website Content Analysis',
+        label: 'Không đọc nội dung website',
+        detail: 'Đích truy cập bị chặn bởi bộ bảo vệ phân tích phía trình duyệt.',
+        status: 'warning',
+      });
+    } else if (input.type === 'url') {
+      engineSources.push('QV Website Content Analysis');
+      evidence.push({
+        source: 'QV Website Content Analysis',
+        label: 'Chưa đọc được nội dung website',
+        detail:
+          'Website không cho phép trình duyệt hiện tại đọc nội dung hoặc không phản hồi trong thời gian giới hạn. QV AI không suy đoán nội dung khi chưa lấy được bằng chứng.',
+        status: 'warning',
+      });
     }
 
     if (isOfficialDomain) {
@@ -472,10 +805,10 @@ export const analyzeQVAI = (
     if (isGambling) {
       riskSignals.push({
         source: 'QV Gambling Signal Analysis',
-        score: 98,
-        weight: 1,
+        score: 55,
+        weight: 0.7,
         reliability: 0.88,
-        kind: 'behavior',
+        kind: 'category',
       });
       engineSources.push('QV Gambling Signal Analysis');
       evidence.push({
@@ -494,7 +827,7 @@ export const analyzeQVAI = (
         score: 95,
         weight: 1,
         reliability: 0.88,
-        kind: 'behavior',
+        kind: 'phishing',
       });
       engineSources.push('QV Phishing Signal Analysis');
       evidence.push({
@@ -513,7 +846,7 @@ export const analyzeQVAI = (
         score: 80,
         weight: 1,
         reliability: 0.88,
-        kind: 'behavior',
+        kind: 'artifact',
       });
       engineSources.push('QV APK Risk Analysis');
       evidence.push({
@@ -779,4 +1112,26 @@ export const analyzeQVAI = (
     recommendedActions: [...new Set(recommendedActions)],
     engineSources: [...new Set(engineSources)],
  };
+};
+
+export const analyzeQVAIWithWebsiteEvidence = async (
+  input: QVAIInput,
+  context: QVAIContext
+): Promise<QVAIResult> => {
+  if (input.type !== 'url' || !input.value.trim()) {
+    return analyzeQVAI(input, context);
+  }
+
+  const websiteEvidence = await collectUrlEvidence(input.value.trim());
+
+  return analyzeQVAI(
+    {
+      ...input,
+      metadata: {
+        ...(input.metadata ?? {}),
+        websiteEvidence,
+      },
+    },
+    context
+  );
 };

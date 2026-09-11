@@ -23,7 +23,7 @@ import { PersonaMode, AnalysisPreset, QVAIResult } from '../../types';
 import { PRESET_LINKS } from '../../data/presets';
 import { useAccount } from '../../context/AccountContext';
 import { useIntelligence } from '../../context/IntelligenceContext';
-import { analyzeQVAI } from '../../services/qvAiService';
+import { analyzeQVAIWithWebsiteEvidence } from '../../services/qvAiService';
 import { normalizeLink } from '../../services/intelligenceService';
 
 interface LinkApkTabProps {
@@ -37,6 +37,7 @@ export const LinkApkTab: React.FC<LinkApkTabProps> = ({ persona, onOpenLicense, 
   const { findIntelligence, entries } = useIntelligence();
 
   const [qvAiResult, setQvAiResult] = useState<QVAIResult | null>(null);
+  const [qvAiAnalyzing, setQvAiAnalyzing] = useState(false);
 
   const [linkInput, setLinkInput] = useState('https://www.jun88wl.com/');
   const [linkResult, setLinkResult] = useState<AnalysisPreset>({
@@ -66,7 +67,7 @@ export const LinkApkTab: React.FC<LinkApkTabProps> = ({ persona, onOpenLicense, 
   // Check community intelligence
   const currentIntel = findIntelligence('link', linkResult.url);
 
-  const handleAnalyze = (targetUrl?: string) => {
+  const handleAnalyze = async (targetUrl?: string) => {
     const url = (targetUrl || linkInput).trim();
     if (!url) return;
 
@@ -76,6 +77,8 @@ export const LinkApkTab: React.FC<LinkApkTabProps> = ({ persona, onOpenLicense, 
     }
 
     setLinkInput(url);
+    setQvAiResult(null);
+    setQvAiAnalyzing(true);
     const lower = url.toLowerCase();
 
     // 1. Check intelligence database first
@@ -210,36 +213,40 @@ export const LinkApkTab: React.FC<LinkApkTabProps> = ({ persona, onOpenLicense, 
       intel?.threatScore ??
       (isGambling ? 98 : isPhishing ? 95 : isApk ? 80 : isVerifiedSafe ? 5 : 20);
 
-    const qvResult = analyzeQVAI(
-      {
-        type: 'url',
-        value: url,
-        metadata: {
-          existingRiskScore,
-          existingLabel: intel?.category || (
-            isGambling
-              ? 'Cờ bạc / cá cược'
-              : isPhishing
-                ? 'Phishing'
-                : isApk
-                  ? 'Tệp APK cần phân tích'
-                  : isVerifiedSafe
-                    ? 'Tên miền khớp danh sách chính thống'
-                    : 'Chưa có đối sánh tình báo'
-          ),
+    try {
+      const qvResult = await analyzeQVAIWithWebsiteEvidence(
+        {
+          type: 'url',
+          value: url,
+          metadata: {
+            existingRiskScore,
+            existingLabel: intel?.category || (
+              isGambling
+                ? 'Cờ bạc / cá cược'
+                : isPhishing
+                  ? 'Phishing'
+                  : isApk
+                    ? 'Tệp APK cần phân tích'
+                    : isVerifiedSafe
+                      ? 'Tên miền khớp danh sách chính thống'
+                      : 'Chưa có đối sánh tình báo'
+            ),
             isOfficialDomain,
             isGambling,
             isPhishing,
             isApk,
             isBaselineSignal: !intel && !isGambling && !isPhishing && !isApk && !isVerifiedSafe,
+          },
         },
-      },
-      {
-        intelligence: entries,
-      }
-    );
+        {
+          intelligence: entries,
+        }
+      );
 
-    setQvAiResult(qvResult);
+      setQvAiResult(qvResult);
+    } finally {
+      setQvAiAnalyzing(false);
+    }
   };
 
   const isApk = linkResult.url.toLowerCase().includes('.apk');
@@ -487,6 +494,16 @@ export const LinkApkTab: React.FC<LinkApkTabProps> = ({ persona, onOpenLicense, 
         </div>
 
         {/* QV AI - TỔNG HỢP LINK/APK */}
+        {qvAiAnalyzing && (
+          <div className="p-5 rounded-xl bg-slate-950 border border-cyan-500/30">
+            <div className="text-[11px] font-black uppercase tracking-wider text-cyan-400">
+              QV AI — Đang thu thập bằng chứng website...
+            </div>
+            <div className="text-xs text-slate-400 mt-1">
+              Kiểm tra cấu trúc URL, nội dung trang và các tín hiệu đăng nhập/thanh toán nếu website cho phép truy cập dữ liệu.
+            </div>
+          </div>
+        )}
         {qvAiResult && (
           <div className="p-5 rounded-xl bg-slate-950 border border-cyan-500/30 space-y-4">
             <div className="flex items-center justify-between gap-3">
