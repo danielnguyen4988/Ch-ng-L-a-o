@@ -19,10 +19,12 @@ import {
   ClipboardPaste,
   OctagonAlert,
 } from 'lucide-react';
-import { PersonaMode, AnalysisPreset } from '../../types';
+import { PersonaMode, AnalysisPreset, QVAIResult } from '../../types';
 import { PRESET_LINKS } from '../../data/presets';
 import { useAccount } from '../../context/AccountContext';
 import { useIntelligence } from '../../context/IntelligenceContext';
+import { analyzeQVAI } from '../../services/qvAiService';
+import { normalizeLink } from '../../services/intelligenceService';
 
 interface LinkApkTabProps {
   persona: PersonaMode;
@@ -32,13 +34,15 @@ interface LinkApkTabProps {
 
 export const LinkApkTab: React.FC<LinkApkTabProps> = ({ persona, onOpenLicense, onOpenReport }) => {
   const { isPro, consumeQuota, account } = useAccount();
-  const { findIntelligence } = useIntelligence();
+  const { findIntelligence, entries } = useIntelligence();
+
+  const [qvAiResult, setQvAiResult] = useState<QVAIResult | null>(null);
 
   const [linkInput, setLinkInput] = useState('https://www.jun88wl.com/');
   const [linkResult, setLinkResult] = useState<AnalysisPreset>({
     label: 'Cổng cờ bạc Jun88',
     url: 'https://www.jun88wl.com/',
-    level: 'CỜ BẠC & CÁ ĐỘ TRỰC TUYẾN BẤT HỢP PHÁP (98%)',
+    level: 'CỜ BẠC & CÁ ĐỘ TRỰC TUYẾN BẤT HỢP PHÁP — RỦI RO CAO',
     color: 'border-red-600 bg-red-950/40 text-red-300',
     badge: 'bg-red-600 text-white',
     vector: 'Cổng game cá cược, casino online, đá gà & nạp tiền ẩn danh xuyên biên giới',
@@ -78,51 +82,62 @@ export const LinkApkTab: React.FC<LinkApkTabProps> = ({ persona, onOpenLicense, 
     const intel = findIntelligence('link', url);
 
     // 2. Check gambling keywords
-    const isGambling =
-      lower.includes('jun88') ||
-      lower.includes('hi88') ||
-      lower.includes('new88') ||
-      lower.includes('f8bet') ||
-      lower.includes('789club') ||
-      lower.includes('go88') ||
-      lower.includes('sunwin') ||
-      lower.includes('kubet') ||
-      lower.includes('thabet') ||
-      lower.includes('w88') ||
-      lower.includes('fun88') ||
-      lower.includes('bk8') ||
-      lower.includes('shbet') ||
-      lower.includes('casino') ||
-      lower.includes('taixiu') ||
-      lower.includes('keonhacai');
+    // Detect gambling by behavior/category signals, not by a single brand name.
+    const gamblingSignals = [
+      'jun88', 'hi88', 'new88', 'f8bet', '789club', 'go88', 'sunwin',
+      'kubet', 'thabet', 'w88', 'fun88', 'bk8', 'shbet',
+      'casino', 'gambling', 'betting', 'sportsbet', 'taixiu',
+      'keonhacai', 'ca cuoc', 'ca-cuoc', 'ca-cuoc-truc-tuyen',
+      'dat cuoc', 'dat-cuoc', 'nha cai', 'nha-cai', 'jackpot',
+      'slot', 'poker', 'game bai', 'game-bai', 'no hu', 'no-hu',
+      'nap tien', 'nap-tien', 'rut tien', 'rut-tien',
+    ];
+    const isGambling = gamblingSignals.some((signal) => lower.includes(signal));
 
-    // 3. Check official safe domains
+    const normalizedHost = normalizeLink(url);
+
+    // 3. Check official domains by hostname, not substring.
+    const officialDomains = [
+      'google.com',
+      'dichvucong.gov.vn',
+      'chinhphu.vn',
+      'vietcombank.com.vn',
+      'highlandscoffee.com.vn',
+      'zalo.me',
+      'facebook.com',
+    ];
+
+    const isOfficialDomain = officialDomains.some(
+      (domain) =>
+        normalizedHost === domain ||
+        normalizedHost.endsWith(`.${domain}`)
+    );
+
     const isVerifiedSafe =
-      (lower.includes('google.com') ||
-        lower.includes('dichvucong.gov.vn') ||
-        lower.includes('chinhphu.vn') ||
-        lower.includes('vietcombank.com.vn') ||
-        lower.includes('highlandscoffee.com.vn') ||
-        lower.includes('zalo.me') ||
-        lower.includes('facebook.com')) &&
-      !lower.includes('.site') &&
-      !lower.includes('.xyz') &&
+      isOfficialDomain &&
       !lower.includes('.apk');
 
-    // 4. Check APK malware
+    // 4. APK is a file type, not proof of malware.
     const isApk = lower.includes('.apk');
 
-    // 5. Check fake gov / bank phishing
+    // 5. Check fake gov / bank phishing using the hostname.
+    const impersonationTerms = [
+      'dichvucong',
+      'smartbanking',
+      'nganhang',
+      'bocongan',
+    ];
+
     const isPhishing =
-      (lower.includes('dichvucong') || lower.includes('smartbanking') || lower.includes('nganhang') || lower.includes('bocongan')) &&
-      !lower.includes('.gov.vn') &&
-      !lower.includes('.com.vn');
+      impersonationTerms.some((term) => normalizedHost.includes(term)) &&
+      !normalizedHost.endsWith('.gov.vn') &&
+      !normalizedHost.endsWith('.com.vn');
 
     if (intel) {
       setLinkResult({
         label: intel.category,
         url: url,
-        level: `${intel.category} (${intel.threatScore}%)`,
+        level: `${intel.category} — Điểm rủi ro: ${intel.threatScore}/100`,
         color:
           intel.threatLevel === 'CRITICAL'
             ? 'border-red-600 bg-red-950/40 text-red-300'
@@ -138,7 +153,7 @@ export const LinkApkTab: React.FC<LinkApkTabProps> = ({ persona, onOpenLicense, 
       setLinkResult({
         label: 'Cổng cờ bạc & cá cược lậu',
         url: url,
-        level: 'CỜ BẠC & CÁ ĐỘ TRỰC TUYẾN BẤT HỢP PHÁP (98%)',
+        level: 'CỜ BẠC & CÁ ĐỘ TRỰC TUYẾN BẤT HỢP PHÁP — RỦI RO CAO',
         color: 'border-red-600 bg-red-950/40 text-red-300',
         badge: 'bg-red-600 text-white',
         vector: 'Nhà cái cá cược bóng đá, casino trực tuyến, game bài đổi thưởng xuyên biên giới',
@@ -147,12 +162,12 @@ export const LinkApkTab: React.FC<LinkApkTabProps> = ({ persona, onOpenLicense, 
       });
     } else if (isApk) {
       setLinkResult({
-        label: 'Tệp cài đặt Android độc hại',
+        label: 'Tệp cài đặt Android (.APK) — cần cảnh giác',
         url: url,
-        level: 'CẢNH BÁO MÃ ĐỘC TỐI NGUY HIỂM (100%)',
+        level: 'CẢNH BÁO TỆP APK — CẦN PHÂN TÍCH',
         color: 'border-red-600 bg-red-950/40 text-red-300',
         badge: 'bg-red-600 text-white',
-        vector: 'Tệp .APK chứa mã độc chiếm quyền trợ năng (Accessibility Service) và tự động đọc SMS OTP',
+        vector: 'Tệp .APK có thể chứa mã độc và cần được phân tích nguồn gốc, chữ ký và hành vi trước khi cài đặt',
         desc: 'Kẻ gian thường giả danh cơ quan Công an hướng dẫn cài đặt app Dịch vụ công hoặc Ngân hàng bằng file .apk này để chiếm đoạt hoàn toàn quyền điều khiển điện thoại từ xa.',
         action: 'TUYỆT ĐỐI KHÔNG CÀI ĐẶT. Nếu đã lỡ cài đặt, bật ngay Chế độ máy bay (Airplane Mode) và mang máy ra trung tâm bảo hành để chạy lại phần mềm!',
       });
@@ -160,7 +175,7 @@ export const LinkApkTab: React.FC<LinkApkTabProps> = ({ persona, onOpenLicense, 
       setLinkResult({
         label: 'Trang web mạo danh cơ quan / ngân hàng',
         url: url,
-        level: 'CẢNH BÁO PHISHING ĐÁNH CẮP TÀI KHOẢN (95%)',
+        level: 'CẢNH BÁO PHISHING ĐÁNH CẮP TÀI KHOẢN — RỦI RO CAO',
         color: 'border-amber-600 bg-amber-950/40 text-amber-300',
         badge: 'bg-amber-600 text-white',
         vector: 'Giao diện nhái trang đăng nhập ngân hàng hoặc dịch vụ công nhà nước',
@@ -171,7 +186,7 @@ export const LinkApkTab: React.FC<LinkApkTabProps> = ({ persona, onOpenLicense, 
       setLinkResult({
         label: 'Tên miền chính thống xác thực',
         url: url,
-        level: 'XÁC MINH AN TOÀN / CHÍNH THỐNG (5%)',
+        level: 'TÊN MIỀN KHỚP DANH SÁCH CHÍNH THỐNG — CẦN XÁC MINH',
         color: 'border-emerald-600 bg-emerald-950/40 text-emerald-300',
         badge: 'bg-emerald-600 text-white',
         vector: 'Cổng thông tin / Dịch vụ trực tuyến chính thức có chứng chỉ SSL hợp lệ',
@@ -182,7 +197,7 @@ export const LinkApkTab: React.FC<LinkApkTabProps> = ({ persona, onOpenLicense, 
       setLinkResult({
         label: 'Tên miền chưa có trong danh sách đen',
         url: url,
-        level: 'ĐÁNH GIÁ SƠ BỘ: CHƯA CÓ BÁO CÁO VI PHẠM (20%)',
+        level: 'CHƯA CÓ ĐỐI SÁNH TÌNH BÁO — CẦN CẢNH GIÁC',
         color: 'border-blue-600 bg-blue-950/40 text-blue-300',
         badge: 'bg-blue-600 text-white',
         vector: 'Kiểm tra đuôi tệp và chứng chỉ máy chủ DNS',
@@ -190,6 +205,41 @@ export const LinkApkTab: React.FC<LinkApkTabProps> = ({ persona, onOpenLicense, 
         action: 'Thận trọng không nhập mật khẩu, mã OTP hay chuyển tiền nếu chưa xác thực rõ nguồn gốc.',
       });
     }
+
+    const existingRiskScore =
+      intel?.threatScore ??
+      (isGambling ? 98 : isPhishing ? 95 : isApk ? 80 : isVerifiedSafe ? 5 : 20);
+
+    const qvResult = analyzeQVAI(
+      {
+        type: 'url',
+        value: url,
+        metadata: {
+          existingRiskScore,
+          existingLabel: intel?.category || (
+            isGambling
+              ? 'Cờ bạc / cá cược'
+              : isPhishing
+                ? 'Phishing'
+                : isApk
+                  ? 'Tệp APK cần phân tích'
+                  : isVerifiedSafe
+                    ? 'Tên miền khớp danh sách chính thống'
+                    : 'Chưa có đối sánh tình báo'
+          ),
+            isOfficialDomain,
+            isGambling,
+            isPhishing,
+            isApk,
+            isBaselineSignal: !intel && !isGambling && !isPhishing && !isApk && !isVerifiedSafe,
+        },
+      },
+      {
+        intelligence: entries,
+      }
+    );
+
+    setQvAiResult(qvResult);
   };
 
   const isApk = linkResult.url.toLowerCase().includes('.apk');
@@ -348,7 +398,7 @@ export const LinkApkTab: React.FC<LinkApkTabProps> = ({ persona, onOpenLicense, 
                 <span className="text-[10px] bg-black/40 px-2 py-0.5 rounded-full font-bold text-red-200">
                   ĐÈN ĐỎ NGUY HIỂM
                 </span>
-                <span className="text-xs font-bold text-red-100">Xác suất độc hại / lừa đảo 99%</span>
+                <span className="text-xs font-bold text-red-100">Điểm rủi ro: {qvAiResult?.threatScore ?? 0}/100</span>
               </div>
               <h4 className="text-base sm:text-lg font-black uppercase tracking-tight mt-0.5">
                 TRANG WEB LỪA ĐẢO / CỜ BẠC / MÃ ĐỘC — TUYỆT ĐỐI KHÔNG BẤM!
@@ -375,7 +425,7 @@ export const LinkApkTab: React.FC<LinkApkTabProps> = ({ persona, onOpenLicense, 
               </h4>
             </div>
           </div>
-        ) : (
+        ) : linkResult.badge.includes('emerald') ? (
           <div className="bg-gradient-to-r from-emerald-600 via-teal-600 to-emerald-700 text-white p-4 rounded-xl shadow-lg flex items-center gap-3.5 animate-in zoom-in-95 duration-200">
             <div className="p-2 bg-white/20 rounded-xl shrink-0">
               <CheckCircle2 className="w-7 h-7 text-white" />
@@ -383,16 +433,16 @@ export const LinkApkTab: React.FC<LinkApkTabProps> = ({ persona, onOpenLicense, 
             <div>
               <div className="flex items-center gap-2">
                 <span className="text-[10px] bg-black/30 px-2 py-0.5 rounded-full font-bold text-emerald-200">
-                  ĐÈN XANH AN TOÀN
+                  KHỚP DOMAIN ĐÃ XÁC MINH
                 </span>
-                <span className="text-xs font-bold text-emerald-100">Đã xác minh chính thống</span>
+                <span className="text-xs font-bold text-emerald-100">Khớp danh sách domain chính thức</span>
               </div>
               <h4 className="text-base sm:text-lg font-black uppercase tracking-tight mt-0.5">
-                AN TOÀN — TRANG WEB CHÍNH THỨC CỦA NHÀ NƯỚC / TỔ CHỨC
+                DOMAIN KHỚP DANH SÁCH CHÍNH THỨC — VẪN CẦN KIỂM TRA URL CỤ THỂ
               </h4>
             </div>
           </div>
-        )}
+        ) : null}
 
         <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-slate-800 pb-4">
           <div>
@@ -436,13 +486,54 @@ export const LinkApkTab: React.FC<LinkApkTabProps> = ({ persona, onOpenLicense, 
           <p className="text-slate-300 text-xs sm:text-sm leading-relaxed">{linkResult.desc}</p>
         </div>
 
+        {/* QV AI - TỔNG HỢP LINK/APK */}
+        {qvAiResult && (
+          <div className="p-5 rounded-xl bg-slate-950 border border-cyan-500/30 space-y-4">
+            <div className="flex items-center justify-between gap-3">
+              <div>
+                <div className="text-[11px] font-black uppercase tracking-wider text-cyan-400">
+                  QV AI — Phân tích tổng hợp Link/APK
+                </div>
+                <div className="text-xs text-slate-400 mt-1">
+                  Tổng hợp tình báo và các tín hiệu của bộ phân tích Link/APK
+                </div>
+              </div>
+              <div className="text-right">
+                <div className="text-2xl font-black text-white">{qvAiResult.threatScore}/100</div>
+                <div className="text-[10px] font-bold text-slate-500 uppercase">{qvAiResult.threatLevel}</div>
+              </div>
+            </div>
+            <div className="bg-slate-900/70 rounded-xl p-3 border border-slate-800 text-xs text-slate-200 leading-relaxed">
+              {qvAiResult.summary}
+            </div>
+            {qvAiResult.evidence.length > 0 && (
+              <div className="space-y-2">
+                <div className="text-[10px] font-black uppercase tracking-wider text-slate-500">Bằng chứng</div>
+                {qvAiResult.evidence.slice(0, 4).map((item, index) => (
+                  <div key={`${item.source}-${item.label}-${index}`} className="bg-slate-900/60 rounded-lg p-3 border border-slate-800">
+                    <div className="text-xs font-bold text-white">{item.label}</div>
+                    <div className="text-[11px] text-slate-400 mt-1">{item.detail}</div>
+                    <div className="text-[10px] text-slate-600 mt-1">Nguồn: {item.source}</div>
+                  </div>
+                ))}
+              </div>
+            )}
+            <div>
+              <div className="text-[10px] font-black uppercase tracking-wider text-slate-500 mb-1">Khuyến nghị</div>
+              {qvAiResult.recommendedActions.slice(0, 3).map((action, index) => (
+                <div key={`${action}-${index}`} className="text-xs text-slate-300 leading-relaxed">• {action}</div>
+              ))}
+            </div>
+          </div>
+        )}
+
         {/* NATIONAL REGULATORY VERIFICATION (VNNIC & NCSC - BỘ TT&TT) */}
         <div className="p-5 rounded-xl bg-gradient-to-r from-slate-900 via-slate-950 to-slate-900 border border-teal-500/30 space-y-3">
           <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 border-b border-slate-800 pb-2.5">
             <div className="flex items-center gap-2">
               <ShieldCheck className="w-5 h-5 text-teal-400" />
               <span className="text-xs font-mono font-bold text-teal-300 uppercase tracking-wide">
-                TRA CỨU AN TOÀN TÊN MIỀN QUỐC GIA (BỘ THÔNG TIN &amp; TRUYỀN THÔNG)
+                ĐỐI CHIẾU THÔNG TIN TÊN MIỀN
               </span>
             </div>
             <span className="text-[11px] font-mono text-slate-400">
@@ -478,31 +569,19 @@ export const LinkApkTab: React.FC<LinkApkTabProps> = ({ persona, onOpenLicense, 
             <div className="p-3 bg-slate-950 rounded-lg border border-slate-800 space-y-1">
               <span className="text-slate-400 block text-[11px]">THỜI GIAN HOẠT ĐỘNG:</span>
               <div className="font-bold font-mono">
-                {linkResult.url.includes('.gov.vn') || linkResult.url.includes('highlandscoffee') || linkResult.url.includes('google') ? (
-                  <span className="text-emerald-400">Đã Hoạt Động &gt; 10 Năm (Uy tín)</span>
-                ) : (
-                  <span className="text-red-400 animate-pulse">&lt; 30 Ngày (Mới lập ẩn danh)</span>
-                )}
+                <span className="text-slate-300">Chưa có dữ liệu tuổi tên miền</span>
               </div>
               <p className="text-[11px] text-slate-400">
-                {linkResult.url.includes('.gov.vn')
-                  ? 'Tên miền hạ tầng lâu năm được bảo vệ bởi Nhà nước'
-                  : '99% web lừa đảo và cờ bạc chỉ mở dưới 30 ngày rồi xóa dấu vết'}
+                Không suy đoán tuổi tên miền khi chưa có dữ liệu WHOIS/đăng ký thực tế.
               </p>
             </div>
 
             <div className="p-3 bg-slate-950 rounded-lg border border-slate-800 space-y-1">
               <span className="text-slate-400 block text-[11px]">CHỨNG NHẬN AN TOÀN QUỐC GIA (NCSC):</span>
               <div className="font-bold font-mono">
-                {linkResult.url.includes('.gov.vn') || linkResult.url.includes('highlandscoffee') ? (
-                  <span className="text-emerald-400 flex items-center gap-1">
-                    <ShieldCheck className="w-3.5 h-3.5" /> Đã Cấp Nhãn Tín Nhiệm An Toàn
-                  </span>
-                ) : (
-                  <span className="text-amber-400 flex items-center gap-1">
-                    <AlertTriangle className="w-3.5 h-3.5" /> Chưa Có Chứng Nhận An Toàn
-                  </span>
-                )}
+                <span className="text-amber-400 flex items-center gap-1">
+                  <AlertTriangle className="w-3.5 h-3.5" /> Chưa kết nối tra cứu NCSC trực tiếp
+                </span>
               </div>
               <p className="text-[11px] text-slate-400">
                 Nhắn tin kiểm tra miễn phí: <strong className="text-amber-300 font-mono">TCDNS [Tên_Miền] gửi 156</strong>
