@@ -265,7 +265,7 @@ export const collectUrlEvidence = async (
   };
 
   const endpoint =
-    (import.meta.env.VITE_WEB_INVESTIGATOR_URL as string | undefined)?.trim() ||
+    (import.meta as ImportMeta & { env?: Record<string, string | undefined> }).env?.VITE_WEB_INVESTIGATOR_URL?.trim() ||
     'http://localhost:8787/api/web-investigate';
 
   try {
@@ -873,11 +873,11 @@ export const analyzeQVAI = (
     }
   }
   const targetType =
-    input.type === 'url'
-      ? 'link'
-      : input.type === 'text'
-        ? 'sms'
-        : input.type;
+  input.type === 'url' || input.type === 'image'
+    ? 'link'
+    : input.type === 'text'
+      ? 'sms'
+      : input.type;
 
   const matches = queryIntelligence(
     context.intelligence,
