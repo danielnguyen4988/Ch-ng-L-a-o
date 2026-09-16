@@ -720,7 +720,7 @@ export const analyzeQVAI = (
       if (websiteEvidence.title) {
         evidence.push({
           source: 'QV Website Content Analysis',
-          label: 'Tiêu đề website đã được đọc',
+          label: 'Thông tin kỹ thuật: tiêu đề website',
           detail: `Title: ${websiteEvidence.title}`,
           status: 'safe',
         });
@@ -729,24 +729,24 @@ export const analyzeQVAI = (
       if (websiteEvidence.finalUrl && websiteEvidence.finalUrl !== value) {
         evidence.push({
           source: 'QV Website Content Analysis',
-          label: 'Website chuyển hướng sang URL khác',
-          detail: `URL cuối: ${websiteEvidence.finalUrl}`,
-          status: 'warning',
+          label: 'Thông tin kỹ thuật: website chuyển hướng',
+          detail: `URL cuối: ${websiteEvidence.finalUrl}. Redirect tự nó không phải bằng chứng lừa đảo.`,
+          status: 'safe',
         });
       }
     } else if (websiteEvidence?.fetchStatus === 'blocked') {
       engineSources.push('QV Website Content Analysis');
       evidence.push({
         source: 'QV Website Content Analysis',
-        label: 'Không đọc nội dung website',
-        detail: 'Đích truy cập bị chặn bởi bộ bảo vệ phân tích phía trình duyệt.',
+        label: 'Thông tin kỹ thuật: không đọc được website',
+        detail: 'Đích truy cập bị chặn bởi bộ bảo vệ phân tích. Việc không đọc được nội dung không được xem là bằng chứng website xấu.',
         status: 'warning',
       });
     } else if (input.type === 'url') {
       engineSources.push('QV Website Content Analysis');
       evidence.push({
         source: 'QV Website Content Analysis',
-        label: 'Chưa đọc được nội dung website',
+        label: 'Thông tin kỹ thuật: chưa đọc được nội dung website',
         detail:
           'Website không cho phép trình duyệt hiện tại đọc nội dung hoặc không phản hồi trong thời gian giới hạn. QV AI không suy đoán nội dung khi chưa lấy được bằng chứng.',
         status: 'warning',
@@ -764,7 +764,7 @@ export const analyzeQVAI = (
       engineSources.push('QV Official Domain Analysis');
       evidence.push({
         source: 'QV Official Domain Analysis',
-        label: 'Tên miền khớp danh sách chính thống',
+        label: 'Thông tin xác thực: tên miền khớp danh sách chính thống',
         detail: 'Đây là tín hiệu tích cực về danh tính tên miền, nhưng không phải bằng chứng tuyệt đối rằng mọi URL hoặc nội dung bên trong đều an toàn.',
         status: 'safe',
         score: 5,
@@ -813,10 +813,10 @@ export const analyzeQVAI = (
       engineSources.push('QV Gambling Signal Analysis');
       evidence.push({
         source: 'QV Gambling Signal Analysis',
-        label: 'Dấu hiệu cờ bạc/cá cược trực tuyến',
-        detail: 'Phát hiện tín hiệu hành vi hoặc danh mục liên quan casino, cá cược, nạp/rút tiền hoặc game bài.',
-        status: 'danger',
-        score: 98,
+        label: 'Rủi ro danh mục: cờ bạc/cá cược trực tuyến',
+        detail: 'Phát hiện tín hiệu hành vi hoặc danh mục liên quan casino, cá cược, nạp/rút tiền hoặc game bài. Đây là tín hiệu về loại nội dung/dịch vụ, không tự nó chứng minh gian lận.',
+        status: 'warning',
+        score: 55,
       });
       recommendedActions.push('Không đăng ký, không nạp tiền và không cung cấp thông tin ngân hàng cho nền tảng cờ bạc/cá cược chưa được xác minh.');
     }
@@ -865,7 +865,7 @@ export const analyzeQVAI = (
       engineSources.push('QV Contradiction Analysis');
       evidence.push({
         source: 'QV Contradiction Analysis',
-        label: 'Mâu thuẫn giữa domain chính thức và tín hiệu rủi ro',
+        label: 'Cần xem xét: domain chính thức nhưng có tín hiệu rủi ro',
         detail: 'Khớp danh sách domain chính thức nhưng đồng thời có tín hiệu rủi ro khác; không được kết luận an toàn chỉ từ domain.',
         status: 'warning',
       });

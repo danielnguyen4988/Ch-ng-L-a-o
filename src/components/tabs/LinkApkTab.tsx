@@ -67,6 +67,19 @@ export const LinkApkTab: React.FC<LinkApkTabProps> = ({ persona, onOpenLicense, 
   // Check community intelligence
   const currentIntel = findIntelligence('link', linkResult.url);
 
+  const isTechnicalEvidence = (item: QVAIResult['evidence'][number]) =>
+    item.label.startsWith('Thông tin kỹ thuật:') ||
+    item.label.startsWith('Thông tin xác thực:') ||
+    item.source === 'QV Official Domain Analysis';
+
+  const qvRiskEvidence = qvAiResult
+    ? qvAiResult.evidence.filter((item) => !isTechnicalEvidence(item)).slice(0, 4)
+    : [];
+
+  const qvTechnicalEvidence = qvAiResult
+    ? qvAiResult.evidence.filter((item) => isTechnicalEvidence(item)).slice(0, 3)
+    : [];
+
   const handleAnalyze = async (targetUrl?: string) => {
     const url = (targetUrl || linkInput).trim();
     if (!url) return;
@@ -194,7 +207,7 @@ export const LinkApkTab: React.FC<LinkApkTabProps> = ({ persona, onOpenLicense, 
         badge: 'bg-emerald-600 text-white',
         vector: 'Cổng thông tin / Dịch vụ trực tuyến chính thức có chứng chỉ SSL hợp lệ',
         desc: 'Tên miền đã được đối soát với danh bạ định danh tổ chức hợp pháp tại Việt Nam và quốc tế.',
-        action: 'Được phép truy cập an toàn. Lưu ý luôn kiểm tra thanh địa chỉ trình duyệt hiển thị đúng tên miền.',
+        action: 'Tên miền khớp danh sách chính thức. Vẫn kiểm tra URL cụ thể và nội dung trang trước khi nhập thông tin.',
       });
     } else {
       setLinkResult({
@@ -524,15 +537,36 @@ export const LinkApkTab: React.FC<LinkApkTabProps> = ({ persona, onOpenLicense, 
               {qvAiResult.summary}
             </div>
             {qvAiResult.evidence.length > 0 && (
-              <div className="space-y-2">
-                <div className="text-[10px] font-black uppercase tracking-wider text-slate-500">Bằng chứng</div>
-                {qvAiResult.evidence.slice(0, 4).map((item, index) => (
-                  <div key={`${item.source}-${item.label}-${index}`} className="bg-slate-900/60 rounded-lg p-3 border border-slate-800">
-                    <div className="text-xs font-bold text-white">{item.label}</div>
-                    <div className="text-[11px] text-slate-400 mt-1">{item.detail}</div>
-                    <div className="text-[10px] text-slate-600 mt-1">Nguồn: {item.source}</div>
+              <div className="space-y-4">
+                {qvRiskEvidence.length > 0 && (
+                  <div className="space-y-2">
+                    <div className="text-[10px] font-black uppercase tracking-wider text-amber-400">
+                      Bằng chứng rủi ro
+                    </div>
+                    {qvRiskEvidence.map((item, index) => (
+                      <div key={`${item.source}-${item.label}-${index}`} className="bg-slate-900/60 rounded-lg p-3 border border-slate-800">
+                        <div className="text-xs font-bold text-white">{item.label}</div>
+                        <div className="text-[11px] text-slate-400 mt-1">{item.detail}</div>
+                        <div className="text-[10px] text-slate-600 mt-1">Nguồn: {item.source}</div>
+                      </div>
+                    ))}
                   </div>
-                ))}
+                )}
+
+                {qvTechnicalEvidence.length > 0 && (
+                  <div className="space-y-2">
+                    <div className="text-[10px] font-black uppercase tracking-wider text-slate-500">
+                      Thông tin kỹ thuật
+                    </div>
+                    {qvTechnicalEvidence.map((item, index) => (
+                      <div key={`${item.source}-${item.label}-${index}`} className="bg-slate-900/40 rounded-lg p-3 border border-slate-800/80">
+                        <div className="text-xs font-bold text-slate-200">{item.label}</div>
+                        <div className="text-[11px] text-slate-400 mt-1">{item.detail}</div>
+                        <div className="text-[10px] text-slate-600 mt-1">Nguồn: {item.source}</div>
+                      </div>
+                    ))}
+                  </div>
+                )}
               </div>
             )}
             <div>
